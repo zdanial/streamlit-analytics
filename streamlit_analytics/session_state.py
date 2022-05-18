@@ -1,8 +1,6 @@
 """
 Hack to add per-session state to Streamlit.
-
 From: https://gist.github.com/tvst/036da038ab3e999a64497f42de966a92
-
 Usage
 -----
 >>> import SessionState
@@ -19,17 +17,21 @@ result:
 >>> session_state.user_name
 'Mary'
 """
-try:
+from packaging import version
+from streamlit.__init__ import __version__ as st_version
+
+if version.parse(st_version) < version.parse("0.65.0"):
     import streamlit.ReportThread as ReportThread
     from streamlit.server.Server import Server
-    get_script_run_ctx = ReportThread.get_report_ctx
-except ImportError:  # Streamlit >= 0.65.0
+elif version.parse(st_version) < version.parse("1.4"):
+    import streamlit.report_thread as ReportThread
     from streamlit.server.server import Server
-    try:
-        import streamlit.report_thread as ReportThread
-        get_script_run_ctx = ReportThread.get_report_ctx
-    except ImportError:  # Streamlit >= 1.4.0
-        from streamlit.script_run_context import get_script_run_ctx
+elif version.parse(st_version) < version.parse("1.8"):
+    from streamlit.script_run_context import get_script_run_ctx
+    from streamlit.server.server import Server
+else:  # version must be > 1.8
+    from streamlit.scriptrunner.script_run_context import get_script_run_ctx
+    from streamlit.server.server import Server
 
 
 class SessionState(object):
@@ -75,8 +77,11 @@ def get(**kwargs):
     """
     # Hack to get the session object from Streamlit.
 
-    ctx = get_script_run_ctx()
-    
+    if version.parse(st_version) < version.parse("1.4"):
+        ctx = ReportThread.get_report_ctx()
+    else:
+        ctx = get_script_run_ctx()
+
     this_session = None
 
     current_server = Server.get_current()
@@ -93,7 +98,11 @@ def get(**kwargs):
             (hasattr(s, "_main_dg") and s._main_dg == ctx.main_dg)
             or
             # Streamlit >= 0.54.0
-            (not hasattr(s, "_main_dg") and s.enqueue == ctx.enqueue)
+            (
+                not hasattr(s, "_main_dg")
+                and hasattr(s, "enqueue")
+                and s.enqueue == ctx.enqueue
+            )
             or
             # Streamlit >= 0.65.2
             (
